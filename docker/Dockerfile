@@ -9,16 +9,16 @@ RUN apt-get update -qq \
   && apt-get clean \
   && rm -rf /var/lib/apt
 
-RUN python -mvenv venv && ./venv/bin/pip install --no-cache-dir --upgrade pip
+# Install pip, Babel, and dependencies globally (removes venv issues)
+RUN python -m pip install --upgrade pip setuptools wheel Babel==2.12.1 torch==2.0.1 --extra-index-url https://download.pytorch.org/whl/cpu "numpy<2"
 
 COPY . .
 
-# Install package from source code, compile translations
-RUN ./venv/bin/pip install Babel==2.12.1 && ./venv/bin/python scripts/compile_locales.py \
-  && ./venv/bin/pip install torch==2.0.1 --extra-index-url https://download.pytorch.org/whl/cpu \
-  && ./venv/bin/pip install "numpy<2" \
-  && ./venv/bin/pip install . \
-  && ./venv/bin/pip cache purge
+# Compile translation files
+RUN python scripts/compile_locales.py
+
+# Install LibreTranslate from source
+RUN pip install .
 
 FROM python:3.11.11-slim-bullseye
 
@@ -31,16 +31,16 @@ USER libretranslate
 COPY --from=builder --chown=1032:1032 /app /app
 WORKDIR /app
 
-COPY --from=builder --chown=1032:1032 /app/venv/bin/ltmanage /usr/bin/
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 RUN if [ "$with_models" = "true" ]; then  \
-  # initialize the language models
   if [ ! -z "$models" ]; then \
-  ./venv/bin/python scripts/install_models.py --load_only_lang_codes "$models";   \
+  python scripts/install_models.py --load_only_lang_codes "$models";   \
   else \
-  ./venv/bin/python scripts/install_models.py;  \
+  python scripts/install_models.py;  \
   fi \
   fi
 
 EXPOSE 5000
-ENTRYPOINT [ "./venv/bin/libretranslate", "--host", "*" ]
+ENTRYPOINT [ "libretranslate", "--host", "*" ]
